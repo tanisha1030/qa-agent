@@ -234,7 +234,7 @@ if "tests" in st.session_state:
         if not kb.html:
             st.error("No HTML uploaded!")
         else:
-            soup = BeautifulSoup(kb.html, "lxml")
+            soup = BeautifulSoup(kb.html, "html.parser")
             ids = [tag["id"] for tag in soup.find_all(attrs={"id": True})]
 
             script = [
