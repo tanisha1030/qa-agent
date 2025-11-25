@@ -1,37 +1,63 @@
 import streamlit as st
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from bs4 import BeautifulSoup
 import os
 import pickle
 import re
+from collections import Counter
+import math
 
-st.set_page_config(page_title="QA Agent (TF-IDF)", layout="wide")
+st.set_page_config(page_title="QA Agent (Pure Python TF-IDF)", layout="wide")
 
 KB_PATH = "kb_store.pkl"
 
-# ------------- KB Class ----------------
+# ---------------------------------------------------------------------
+# PURE PYTHON TF-IDF IMPLEMENTATION
+# ---------------------------------------------------------------------
+
+def tokenize(text):
+    text = text.lower()
+    tokens = re.findall(r"[a-z0-9]+", text)
+    return tokens
+
+def compute_tf(tokens):
+    counts = Counter(tokens)
+    total = len(tokens)
+    return {word: counts[word] / total for word in counts}
+
+def compute_idf(docs):
+    N = len(docs)
+    idf = {}
+    for doc in docs:
+        for word in set(doc):
+            idf[word] = idf.get(word, 0) + 1
+    for w in idf:
+        idf[w] = math.log(N / idf[w])
+    return idf
+
+def compute_tfidf_vector(tokens, vocabulary, idf):
+    tf = compute_tf(tokens)
+    return np.array([tf.get(word, 0) * idf.get(word, 0) for word in vocabulary])
+
+def cosine_sim(a, b):
+    num = np.dot(a, b)
+    den = np.linalg.norm(a) * np.linalg.norm(b)
+    if den == 0: 
+        return 0
+    return num / den
+
+# ---------------------------------------------------------------------
+# KB Class (Uses pure python TF-IDF)
+# ---------------------------------------------------------------------
+
 class SimpleKB:
     def __init__(self):
         self.texts = []
         self.metadatas = []
         self.html = ""
-        self.html_filename = None
-
-        # TF-IDF
-        self.vectorizer = None
-        self.doc_vectors = None
-
-    def add_doc(self, text, meta):
-        chunks = self.chunk_text(text)
-        for c in chunks:
-            self.texts.append(c)
-            self.metadatas.append(meta)
-
-    def set_html(self, html, filename):
-        self.html = html
-        self.html_filename = filename
+        self.vocab = []
+        self.doc_vectors = []
+        self.idf = {}
 
     def chunk_text(self, text, size=500, overlap=50):
         out = []
@@ -40,32 +66,61 @@ class SimpleKB:
             end = start + size
             out.append(text[start:end])
             start = end - overlap
-            if start < 0:
-                start = 0
+            if start < 0: start = 0
         return out
 
+    def add_doc(self, text, meta):
+        for c in self.chunk_text(text):
+            self.texts.append(c)
+            self.metadatas.append(meta)
+
+    def set_html(self, html, filename):
+        self.html = html
+        self.html_filename = filename
+
     def build(self):
-        if not self.texts:
-            return
-        self.vectorizer = TfidfVectorizer(stop_words="english")
-        self.doc_vectors = self.vectorizer.fit_transform(self.texts)
+        tokenized_docs = [tokenize(t) for t in self.texts]
+
+        # Build vocabulary
+        vocab = set()
+        for toks in tokenized_docs:
+            vocab.update(toks)
+        self.vocab = sorted(list(vocab))
+
+        # Compute IDF
+        self.idf = compute_idf(tokenized_docs)
+
+        # Build vectors
+        self.doc_vectors = [
+            compute_tfidf_vector(toks, self.vocab, self.idf) 
+            for toks in tokenized_docs
+        ]
 
     def retrieve(self, query, k=4):
-        if self.vectorizer is None:
+        if not self.vocab:
             return []
 
-        qv = self.vectorizer.transform([query])
-        sim = cosine_similarity(qv, self.doc_vectors)[0]
-        top_idx = np.argsort(sim)[::-1][:k]
+        q_tokens = tokenize(query)
+        q_vec = compute_tfidf_vector(q_tokens, self.vocab, self.idf)
+
+        sims = []
+        for i, vec in enumerate(self.doc_vectors):
+            sims.append((cosine_sim(q_vec, vec), i))
+
+        sims.sort(reverse=True)
 
         results = []
-        for idx in top_idx:
-            results.append({"text": self.texts[idx],
-                            "meta": self.metadatas[idx]})
+        for score, idx in sims[:k]:
+            results.append({
+                "text": self.texts[idx],
+                "meta": self.metadatas[idx],
+                "score": float(score)
+            })
         return results
 
+# -------------------------------------------------------------------------
 
-# -------- Load or create KB --------
+# Load or create KB
 if os.path.exists(KB_PATH):
     try:
         with open(KB_PATH, "rb") as f:
@@ -75,24 +130,25 @@ if os.path.exists(KB_PATH):
 else:
     kb = SimpleKB()
 
-# ---------------------- UI -------------------------
+# -------------------------------------------------------------------------
+# UI
+# -------------------------------------------------------------------------
 
-st.title("Autonomous QA Agent — (TF-IDF Version, No FAISS, No OpenAI)")
+st.title("Autonomous QA Agent — Pure Python Version (No sklearn, No FAISS, No API)")
 
 with st.sidebar:
-    st.header("Upload documents")
+    st.header("Upload Files")
 
-    docs = st.file_uploader("Upload support docs", type=["txt", "md", "json"], accept_multiple_files=True)
-    html_file = st.file_uploader("Upload checkout.html", type=["html", "htm"])
+    docs = st.file_uploader("Support Docs", type=["txt", "md", "json"], accept_multiple_files=True)
+    html_file = st.file_uploader("Checkout HTML", type=["html", "htm"])
 
     if st.button("Add to KB"):
         added = 0
         if docs:
             for f in docs:
-                text = f.read().decode("utf-8", errors="ignore")
-                kb.add_doc(text, {"source": f.name})
+                txt = f.read().decode("utf-8", errors="ignore")
+                kb.add_doc(txt, {"source": f.name})
                 added += 1
-
         if html_file:
             html_text = html_file.read().decode("utf-8", errors="ignore")
             kb.set_html(html_text, html_file.name)
@@ -101,7 +157,7 @@ with st.sidebar:
         with open(KB_PATH, "wb") as f:
             pickle.dump(kb, f)
 
-        st.success(f"Added {added} items to KB")
+        st.success(f"Added {added} files!")
 
     if st.button("Build KB"):
         kb.build()
@@ -109,113 +165,97 @@ with st.sidebar:
             pickle.dump(kb, f)
         st.success("KB built successfully!")
 
-
-st.subheader("KB Status")
+st.subheader("Status")
 st.write("HTML Uploaded:", bool(kb.html))
-st.write("Document Chunks:", len(kb.texts))
+st.write("Chunks:", len(kb.texts))
 
-# ------------- Test Case Generation --------------------
+# -------------------------------------------------------------------------
+# TEST CASE GENERATION
+# -------------------------------------------------------------------------
 
 st.header("Generate Test Cases")
-query = st.text_area("Enter feature to test (e.g. discount code):")
-top_k = st.number_input("Top K retrieval", value=4, min_value=1, max_value=10)
+
+query = st.text_area("Enter feature:", height=60)
+top_k = st.number_input("Top K", 1, 10, 4)
 
 if st.button("Generate Test Cases"):
-    if not query:
-        st.error("Enter a query first")
-    else:
-        ctx = kb.retrieve(query, k=top_k)
+    ctx = kb.retrieve(query, k=top_k)
 
-        st.markdown("### Retrieved Contexts")
-        for c in ctx:
-            st.markdown(f"**{c['meta'].get('source','?')}**: {c['text'][:200]}...")
+    st.markdown("### Retrieved Context")
+    for c in ctx:
+        st.write(f"- **{c['meta'].get('source')}** → {c['text'][:150]}...")
 
-        combined = " ".join([c["text"] for c in ctx]).lower()
+    combined = " ".join([c["text"] for c in ctx]).lower()
 
-        tcs = []
+    tests = []
 
-        # ------- Rule-based test generation -------
-        if "discount" in combined or "save" in combined:
-            tcs.append({
-                "Test_ID": "TC-DIS-001",
-                "Feature": "Discount",
-                "Test_Scenario": "Apply valid discount code",
-                "Expected_Result": "Correct discount applied",
-                "Grounded_In": "retrieved_docs"
-            })
-            tcs.append({
-                "Test_ID": "TC-DIS-002",
-                "Feature": "Discount",
-                "Test_Scenario": "Apply invalid discount code",
-                "Expected_Result": "Discount rejected",
-                "Grounded_In": "retrieved_docs"
-            })
+    if "discount" in combined:
+        tests.append({
+            "Test_ID": "TC-DISC-001",
+            "Scenario": "Apply valid discount code",
+            "Expected": "Correct discount applied",
+        })
+        tests.append({
+            "Test_ID": "TC-DISC-002",
+            "Scenario": "Apply invalid discount code",
+            "Expected": "Discount rejected",
+        })
 
-        if "email" in combined or "address" in combined:
-            tcs.append({
-                "Test_ID": "TC-FORM-001",
-                "Feature": "Form Validation",
-                "Test_Scenario": "Invalid email",
-                "Expected_Result": "Inline red error message",
-                "Grounded_In": "retrieved_docs"
-            })
+    if "email" in combined:
+        tests.append({
+            "Test_ID": "TC-FORM-001",
+            "Scenario": "Submit invalid email",
+            "Expected": "Inline error message",
+        })
 
-        if not tcs:
-            tcs.append({
-                "Test_ID": "TC-GEN-001",
-                "Feature": query,
-                "Test_Scenario": "Generic test case",
-                "Expected_Result": "Expected behavior from docs",
-                "Grounded_In": "retrieved_docs"
-            })
+    if not tests:
+        tests.append({
+            "Test_ID": "TC-GEN-001",
+            "Scenario": f"Test {query}",
+            "Expected": "Matches documentation",
+        })
 
-        st.json(tcs)
-        st.session_state["testcases"] = tcs
+    st.json(tests)
+    st.session_state["tests"] = tests
 
-# ------------------ Script Generation -----------------------
+# -------------------------------------------------------------------------
+# SELENIUM SCRIPT GENERATION
+# -------------------------------------------------------------------------
 
 st.header("Generate Selenium Script")
 
-if "testcases" in st.session_state:
-    tc_list = st.session_state["testcases"]
-    labels = [f"{tc['Test_ID']} - {tc['Test_Scenario']}" for tc in tc_list]
+if "tests" in st.session_state:
+    labels = [t["Test_ID"] for t in st.session_state["tests"]]
     choice = st.selectbox("Choose Test Case", labels)
 
-    selected = tc_list[labels.index(choice)]
+    tc = next(t for t in st.session_state["tests"] if t["Test_ID"] == choice)
 
     if st.button("Generate Script"):
         if not kb.html:
-            st.error("No HTML in KB.")
+            st.error("No HTML uploaded!")
         else:
             soup = BeautifulSoup(kb.html, "lxml")
-            ids = {}
-            for el in soup.find_all(attrs={"id": True}):
-                ids[el["id"]] = el.name
+            ids = [tag["id"] for tag in soup.find_all(attrs={"id": True})]
 
-            script = []
-            script.append("from selenium import webdriver")
-            script.append("from selenium.webdriver.common.by import By")
-            script.append("import time\n")
-            script.append("driver = webdriver.Chrome()")
-            script.append("driver.get('file://PATH_TO_checkout.html')\n")
+            script = [
+                "from selenium import webdriver",
+                "from selenium.webdriver.common.by import By",
+                "import time\n",
+                "driver = webdriver.Chrome()",
+                "driver.get('file://PATH_TO_checkout.html')\n"
+            ]
 
-            if selected["Feature"].lower().startswith("discount"):
-                if "discount" in ids:
-                    script.append("el = driver.find_element(By.ID,'discount')")
-                    script.append("el.send_keys('SAVE15')")
-                    script.append("driver.find_element(By.ID,'apply-discount').click()")
-                else:
-                    script.append("# Discount input not found")
+            if "discount" in tc["Scenario"].lower():
+                script += [
+                    "driver.find_element(By.ID,'discount').send_keys('SAVE15')",
+                    "driver.find_element(By.ID,'apply-discount').click()"
+                ]
             else:
-                script.append("# Fill form fields if available:")
+                script.append("# Fill common fields")
                 for key in ["name", "email", "address"]:
                     for i in ids:
                         if key in i:
                             script.append(f"driver.find_element(By.ID,'{i}').send_keys('test')")
-                for i in ids:
-                    if "pay" in i:
-                        script.append(f"driver.find_element(By.ID,'{i}').click()")
-                        break
 
             st.code("\n".join(script), language="python")
 
