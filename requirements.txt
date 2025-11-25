@@ -1,0 +1,8 @@
+streamlit==1.30.0
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4
+beautifulsoup4==4.12.2
+lxml==4.9.3
+tqdm==4.66.1
+python-dotenv==1.0.0
+numpy==1.25.2
