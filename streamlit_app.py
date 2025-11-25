@@ -134,7 +134,7 @@ else:
 # UI
 # -------------------------------------------------------------------------
 
-st.title("Autonomous QA Agent — Pure Python Version (No sklearn, No FAISS, No API)")
+st.title("Autonomous QA Agent")
 
 with st.sidebar:
     st.header("Upload Files")
