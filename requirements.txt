@@ -1,6 +1,5 @@
 streamlit==1.30.0
-scikit-learn==1.4.1
+numpy==1.26.4
 beautifulsoup4==4.12.2
 lxml==4.9.3
 tqdm==4.66.1
-numpy==1.26.4
