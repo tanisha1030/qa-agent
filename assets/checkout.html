@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>E-Shop Checkout</title>
+  <style>
+    .error { color: red; }
+    .success { color: green; }
+    #pay-now { background-color: #2ecc71; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>E-Shop Checkout</h1>
+
+  <div id="items">
+    <div class="item" data-id="item1">
+      <span class="name">Widget A</span>
+      <span class="price" data-price="10">₹10</span>
+      <button class="add-to-cart" id="add_item1">Add to Cart</button>
+    </div>
+    <div class="item" data-id="item2">
+      <span class="name">Widget B</span>
+      <span class="price" data-price="20">₹20</span>
+      <button class="add-to-cart" id="add_item2">Add to Cart</button>
+    </div>
+  </div>
+
+  <h2>Cart Summary</h2>
+  <div id="cart">
+    <div>Items: <span id="cart-count">0</span></div>
+    <div>Total: ₹<span id="cart-total">0</span></div>
+    <div>
+      Discount code: <input id="discount" name="discount" />
+      <button id="apply-discount">Apply</button>
+      <div id="discount-msg" class="error" style="display:none"></div>
+    </div>
+  </div>
+
+  <h2>User Details</h2>
+  <form id="user-form">
+    <label>Name: <input id="name" name="name" /></label><br/>
+    <label>Email: <input id="email" name="email" /></label><div id="email-err" class="error" style="display:none"></div><br/>
+    <label>Address: <textarea id="address" name="address"></textarea></label><div id="addr-err" class="error" style="display:none"></div><br/>
+
+    <h3>Shipping Method</h3>
+    <label><input type="radio" name="shipping" value="standard" id="ship_standard" checked /> Standard</label>
+    <label><input type="radio" name="shipping" value="express" id="ship_express" /> Express</label>
+
+    <h3>Payment</h3>
+    <label><input type="radio" name="payment" value="card" id="pay_card" checked /> Credit Card</label>
+    <label><input type="radio" name="payment" value="paypal" id="pay_paypal" /> PayPal</label>
+
+    <div id="card-details">
+      <label>Card Number: <input id="card_number" name="card_number" /></label><div id="card-err" class="error" style="display:none"></div><br/>
+    </div>
+
+    <button type="button" id="pay-now">Pay Now</button>
+    <div id="result" style="display:none" class="success">Payment Successful!</div>
+  </form>
+
+  <script>
+    // Minimal client-side validation for demo
+    document.getElementById("pay-now").addEventListener("click", function(){
+      var email = document.getElementById("email").value;
+      var addr = document.getElementById("address").value;
+      var card = document.getElementById("card_number").value;
+      var ok = true;
+      if(!/.+@.+\..+/.test(email)){ document.getElementById("email-err").style.display='block'; document.getElementById("email-err").innerText='Invalid email'; ok=false;} else document.getElementById("email-err").style.display='none';
+      if(addr.trim()===''){ document.getElementById("addr-err").style.display='block'; document.getElementById("addr-err").innerText='Address required'; ok=false;} else document.getElementById("addr-err").style.display='none';
+      if(document.getElementById("pay_card").checked && card.trim().length<12){ document.getElementById("card-err").style.display='block'; document.getElementById("card-err").innerText='Invalid card'; ok=false;} else document.getElementById("card-err").style.display='none';
+      if(ok){ document.getElementById("result").style.display='block'; }
+    });
+  </script>
+</body>
+</html>
