@@ -1,4 +1,0 @@
-UI/UX Guidelines:
-- Form validation errors must be displayed in red text and be next to the input.
-- The 'Pay Now' button should be green and prominent.
-- Discount messages should be displayed near the cart summary.
